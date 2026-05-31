@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  password      String
+  emailVerified Boolean   @default(false)
+  otp           String?
+  otpExpiry     DateTime?
+  resetToken    String?   @unique
+  resetTokenExp DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  folders       Folder[]
+  lists         List[]
+  tags          Tag[]
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  order     Float    @default(0)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lists     List[]
+
+  @@index([userId])
+}
+
+model List {
+  id        String    @id @default(uuid())
+  name      String
+  icon      String    @default("📋")
+  color     String    @default("#4A90D9")
+  folderId  String?
+  folder    Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Float     @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tasks     Task[]
+  sections  Section[]
+
+  @@index([userId])
+}
+
+model Section {
+  id        String   @id @default(uuid())
+  name      String
+  listId    String
+  list      List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  order     Float    @default(0)
+  collapsed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tasks     Task[]
+}
+
+enum TaskStatus {
+  active
+  completed
+  wont_do
+  deleted
+}
+
+enum Priority {
+  p1
+  p2
+  p3
+  none
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String     @default("")
+  parentId    String?
+  parent      Task?      @relation("TaskChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Task[]     @relation("TaskChildren")
+  listId      String
+  list        List       @relation(fields: [listId], references: [id], onDelete: Cascade)
+  sectionId   String?
+  section     Section?   @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  status      TaskStatus @default(active)
+  priority    Priority   @default(none)
+  dueDate     DateTime?
+  dueTime     String?
+  recurrence  Json?
+  order       Float      @default(0)
+  isPinned    Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  completedAt DateTime?
+  tags        TaskTag[]
+  reminders   Reminder[]
+
+  @@index([listId, status])
+  @@index([parentId])
+  @@index([dueDate, status])
+  @@index([status])
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  name      String
+  color     String    @default("#4A90D9")
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  tasks     TaskTag[]
+
+  @@unique([name, userId])
+  @@index([userId])
+}
+
+model TaskTag {
+  taskId String
+  tagId  String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+}
+
+model Reminder {
+  id            String   @id @default(uuid())
+  taskId        String
+  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  minutesBefore Int
+  createdAt     DateTime @default(now())
+}
