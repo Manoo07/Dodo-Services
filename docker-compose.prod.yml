@@ -1,32 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Dodo — Production Compose
+#
+#  Credentials come from .env in this same directory (never committed to git).
+#  Copy .env.example → .env and fill in your values before running.
+#
+#  Start:   docker compose -f docker-compose.prod.yml up -d --build
+#  Logs:    docker compose -f docker-compose.prod.yml logs -f
+#  Stop:    docker compose -f docker-compose.prod.yml down
+#  Seed:    docker compose -f docker-compose.prod.yml exec backend npx tsx prisma/seed.ts
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
+
   postgres:
     image: postgres:16-alpine
     container_name: dodo-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-dodo}
-      POSTGRES_USER: ${DB_USER:-dodo}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      # Mounted from the 6 GB loop-device filesystem created by deploy.sh
-      - /var/dodo/pgdata:/var/lib/postgresql/data
+      - dodo_pgdata:/var/lib/postgresql/data
     ports:
-      # Bind to localhost only — backend on the same machine connects via 127.0.0.1
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dodo} -d ${DB_NAME:-dodo}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 20s
     deploy:
       resources:
         limits:
           memory: 1g
-        reservations:
-          memory: 256m
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "50m"
         max-file: "3"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dodo-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      PORT: 3000
+      NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL}
+      APP_URL: ${APP_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      GMAIL_USER: ${GMAIL_USER}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      SEED_DB: ${SEED_DB:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  dodo_pgdata:
