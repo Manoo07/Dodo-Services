@@ -20,7 +20,7 @@ RUN npm run build
 FROM node:20-alpine
 
 # dumb-init: proper PID 1 signal handling (SIGTERM → graceful shutdown)
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init openssl
 
 WORKDIR /app
 
