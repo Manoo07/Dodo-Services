@@ -8,7 +8,12 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173'
+// Email links go to the FRONTEND (GitHub Pages), not the backend.
+// FRONTEND_URL may be comma-separated for CORS — take the first origin for links.
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')[0]
+  .trim()
+
 const FROM = `Dodo <${process.env.GMAIL_USER}>`
 
 // ─── HTML layout helper ───────────────────────────────────────────────────────
@@ -75,7 +80,7 @@ export async function sendPasswordResetEmail(
   name: string,
   token: string,
 ): Promise<void> {
-  const link = `${APP_URL}?reset=${token}`
+  const link = `${FRONTEND_URL}?reset=${token}`
   await transporter.sendMail({
     from: FROM,
     to,
