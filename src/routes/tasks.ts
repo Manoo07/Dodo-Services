@@ -2,11 +2,14 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
-import { requireAuth } from '../middleware/requireAuth.js'
+import { requireAuth, type AuthRequest } from '../middleware/requireAuth.js'
 
 export const tasksRouter = Router()
 
 tasksRouter.use(requireAuth)
+
+/** Extract the authenticated user's ID from the request */
+const uid = (req: Request) => (req as AuthRequest).userId
 
 // ─── Shared include fragments ───────────────────────────────────────────────
 
@@ -37,6 +40,7 @@ tasksRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
     const { listId, status, priority, tag, parentId } = req.query
 
     const where: Prisma.TaskWhereInput = {
+      list: { userId: uid(req) },         // ← ownership
       status: { not: 'deleted' },
       ...(listId && { listId: String(listId) }),
       ...(status && { status: String(status) as Prisma.EnumTaskStatusFilter }),
@@ -64,10 +68,13 @@ tasksRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
 
 // ─── GET /api/tasks/all — flat list for client-side hydration ────────────────
 
-tasksRouter.get('/all', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.get('/all', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tasks = await prisma.task.findMany({
-      where: { status: { not: 'deleted' } },
+      where: {
+        list: { userId: uid(req) },        // ← ownership
+        status: { not: 'deleted' },
+      },
       include: {
         tags: { include: { tag: true } },
         reminders: true,
@@ -85,7 +92,7 @@ tasksRouter.get('/all', async (_req: Request, res: Response, next: NextFunction)
 
 // ─── GET /api/tasks/today ────────────────────────────────────────────────────
 
-tasksRouter.get('/today', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.get('/today', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const now = new Date()
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -93,6 +100,7 @@ tasksRouter.get('/today', async (_req: Request, res: Response, next: NextFunctio
 
     const tasks = await prisma.task.findMany({
       where: {
+        list: { userId: uid(req) },        // ← ownership
         dueDate: { gte: startOfDay, lte: endOfDay },
         status: { not: 'deleted' },
       },
@@ -108,7 +116,7 @@ tasksRouter.get('/today', async (_req: Request, res: Response, next: NextFunctio
 
 // ─── GET /api/tasks/next7days ────────────────────────────────────────────────
 
-tasksRouter.get('/next7days', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.get('/next7days', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const now = new Date()
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -116,6 +124,7 @@ tasksRouter.get('/next7days', async (_req: Request, res: Response, next: NextFun
 
     const tasks = await prisma.task.findMany({
       where: {
+        list: { userId: uid(req) },        // ← ownership
         dueDate: { gte: start, lte: end },
         status: { not: 'deleted' },
       },
@@ -131,13 +140,14 @@ tasksRouter.get('/next7days', async (_req: Request, res: Response, next: NextFun
 
 // ─── GET /api/tasks/overdue ──────────────────────────────────────────────────
 
-tasksRouter.get('/overdue', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.get('/overdue', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)
 
     const tasks = await prisma.task.findMany({
       where: {
+        list: { userId: uid(req) },        // ← ownership
         dueDate: { lt: startOfToday },
         status: 'active',
       },
@@ -151,13 +161,13 @@ tasksRouter.get('/overdue', async (_req: Request, res: Response, next: NextFunct
   }
 })
 
-// ─── GET /api/tasks/inbox — single query via list relation ───────────────────
+// ─── GET /api/tasks/inbox ────────────────────────────────────────────────────
 
-tasksRouter.get('/inbox', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.get('/inbox', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tasks = await prisma.task.findMany({
       where: {
-        list: { name: { equals: 'Inbox', mode: 'insensitive' } },
+        list: { userId: uid(req), name: { equals: 'Inbox', mode: 'insensitive' } },  // ← ownership
         parentId: null,
         status: { not: 'deleted' },
       },
@@ -185,6 +195,7 @@ tasksRouter.get('/search', async (req: Request, res: Response, next: NextFunctio
     const tasks = await prisma.task.findMany({
       where: {
         AND: [
+          { list: { userId: uid(req) } },  // ← ownership
           {
             OR: [
               { title: { contains: String(q), mode: 'insensitive' } },
@@ -216,17 +227,17 @@ tasksRouter.get('/search', async (req: Request, res: Response, next: NextFunctio
 
 // ─── GET /api/tasks/trash ────────────────────────────────────────────────────
 
-tasksRouter.get('/trash', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.get('/trash', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tasks = await prisma.task.findMany({
-      where: { status: 'deleted' },
+      where: {
+        list: { userId: uid(req) },        // ← ownership
+        status: 'deleted',
+      },
       include: {
         tags: { include: { tag: true } },
         list: { select: { id: true, name: true, icon: true, color: true } },
-        children: {
-          where: { status: 'deleted' },
-          select: { id: true, status: true },
-        },
+        children: { where: { status: 'deleted' }, select: { id: true, status: true } },
       },
       orderBy: { updatedAt: 'desc' },
     })
@@ -239,9 +250,14 @@ tasksRouter.get('/trash', async (_req: Request, res: Response, next: NextFunctio
 
 // ─── DELETE /api/tasks/trash/empty ──────────────────────────────────────────
 
-tasksRouter.delete('/trash/empty', async (_req: Request, res: Response, next: NextFunction) => {
+tasksRouter.delete('/trash/empty', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await prisma.task.deleteMany({ where: { status: 'deleted' } })
+    await prisma.task.deleteMany({
+      where: {
+        list: { userId: uid(req) },        // ← ownership: only wipe THIS user's trash
+        status: 'deleted',
+      },
+    })
     res.status(204).send()
   } catch (err) {
     next(err)
@@ -252,8 +268,8 @@ tasksRouter.delete('/trash/empty', async (_req: Request, res: Response, next: Ne
 
 tasksRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const task = await prisma.task.findUnique({
-      where: { id: req.params.id },
+    const task = await prisma.task.findFirst({   // findFirst allows compound where
+      where: { id: req.params.id, list: { userId: uid(req) } },  // ← ownership
       include: {
         tags: { include: { tag: true } },
         reminders: true,
@@ -308,6 +324,13 @@ tasksRouter.post('/', async (req: Request, res: Response, next: NextFunction) =>
       return
     }
 
+    // Verify the target list belongs to this user
+    const list = await prisma.list.findFirst({ where: { id: String(listId), userId: uid(req) } })
+    if (!list) {
+      res.status(403).json({ error: 'List not found or access denied' })
+      return
+    }
+
     const task = await prisma.task.create({
       data: {
         title,
@@ -352,6 +375,13 @@ tasksRouter.put('/:id', async (req: Request, res: Response, next: NextFunction) 
       tags,
     } = req.body
 
+    // Ownership check
+    const owned = await prisma.task.findFirst({
+      where: { id: req.params.id, list: { userId: uid(req) } },
+      select: { id: true },
+    })
+    if (!owned) { res.status(404).json({ error: 'Task not found' }); return }
+
     const task = await prisma.$transaction(async (tx) => {
       if (tags !== undefined) {
         await tx.taskTag.deleteMany({ where: { taskId: req.params.id } })
@@ -389,8 +419,8 @@ tasksRouter.put('/:id', async (req: Request, res: Response, next: NextFunction) 
 
 tasksRouter.patch('/:id/complete', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const existing = await prisma.task.findUnique({
-      where: { id: req.params.id },
+    const existing = await prisma.task.findFirst({
+      where: { id: req.params.id, list: { userId: uid(req) } },  // ← ownership
       select: { status: true },
     })
     if (!existing) {
@@ -417,10 +447,13 @@ tasksRouter.patch('/:id/complete', async (req: Request, res: Response, next: Nex
 
 tasksRouter.patch('/:id/wont-do', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const task = await prisma.task.update({
-      where: { id: req.params.id },
-      data: { status: 'wont_do' },
+    const owned = await prisma.task.findFirst({
+      where: { id: req.params.id, list: { userId: uid(req) } },
+      select: { id: true },
     })
+    if (!owned) { res.status(404).json({ error: 'Task not found' }); return }
+
+    const task = await prisma.task.update({ where: { id: req.params.id }, data: { status: 'wont_do' } })
     res.json(task)
   } catch (err) {
     next(err)
@@ -431,6 +464,12 @@ tasksRouter.patch('/:id/wont-do', async (req: Request, res: Response, next: Next
 
 tasksRouter.patch('/:id/reorder', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const owned = await prisma.task.findFirst({
+      where: { id: req.params.id, list: { userId: uid(req) } },
+      select: { id: true },
+    })
+    if (!owned) { res.status(404).json({ error: 'Task not found' }); return }
+
     const { order, parentId, sectionId } = req.body
     const task = await prisma.task.update({
       where: { id: req.params.id },
@@ -464,9 +503,9 @@ tasksRouter.post('/:id/duplicate', async (req: Request, res: Response, next: Nex
     children?: NodeWithChildren[]
   }
 
-  // Fetch the entire subtree in a single query (up to 4 levels)
-  const original = await prisma.task.findUnique({
-    where: { id: req.params.id },
+  // Ownership check + fetch the entire subtree in a single query (up to 4 levels)
+  const original = await prisma.task.findFirst({
+    where: { id: req.params.id, list: { userId: uid(req) } },
     include: {
       tags: true,
       children: {
@@ -545,6 +584,12 @@ tasksRouter.post('/:id/duplicate', async (req: Request, res: Response, next: Nex
 
 tasksRouter.patch('/:id/restore', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const owned = await prisma.task.findFirst({
+      where: { id: req.params.id, list: { userId: uid(req) } },
+      select: { id: true },
+    })
+    if (!owned) { res.status(404).json({ error: 'Task not found' }); return }
+
     const task = await prisma.task.update({
       where: { id: req.params.id },
       data: { status: 'active' },
@@ -563,7 +608,10 @@ tasksRouter.patch('/:id/restore', async (req: Request, res: Response, next: Next
 
 tasksRouter.delete('/:id/permanent', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await prisma.task.delete({ where: { id: req.params.id } })
+    const result = await prisma.task.deleteMany({
+      where: { id: req.params.id, list: { userId: uid(req) } },  // ← ownership
+    })
+    if (result.count === 0) { res.status(404).json({ error: 'Task not found' }); return }
     res.status(204).send()
   } catch (err) {
     next(err)
@@ -574,10 +622,11 @@ tasksRouter.delete('/:id/permanent', async (req: Request, res: Response, next: N
 
 tasksRouter.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await prisma.task.update({
-      where: { id: req.params.id },
+    const result = await prisma.task.updateMany({
+      where: { id: req.params.id, list: { userId: uid(req) } },  // ← ownership
       data: { status: 'deleted' },
     })
+    if (result.count === 0) { res.status(404).json({ error: 'Task not found' }); return }
     res.status(204).send()
   } catch (err) {
     next(err)
