@@ -22,13 +22,14 @@ function signToken(userId: string): string {
   return jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: JWT_EXPIRES })
 }
 
-function safeUser(user: { id: string; email: string; name: string; emailVerified: boolean; createdAt: Date }) {
+function safeUser(user: { id: string; email: string; name: string; emailVerified: boolean; createdAt: Date; digestHour: number }) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
+    digestHour: user.digestHour,
   }
 }
 
@@ -167,6 +168,34 @@ authRouter.post('/verify-email', async (req: Request, res: Response, next: NextF
     // Issue a token so the user is immediately signed in after verification
     const token = signToken(user.id)
     res.json({ user: safeUser(updatedUser), token, message: 'Email verified! Welcome to Dodo.' })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─── PATCH /api/auth/preferences ─────────────────────────────────────────────
+
+authRouter.patch('/preferences', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as AuthRequest).userId
+    const { digestHour } = req.body
+
+    if (digestHour !== undefined) {
+      const h = Number(digestHour)
+      if (!Number.isInteger(h) || h < 0 || h > 23) {
+        res.status(400).json({ error: 'digestHour must be an integer 0–23 (UTC)' })
+        return
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(digestHour !== undefined && { digestHour: Number(digestHour) }),
+      },
+    })
+
+    res.json(safeUser(user))
   } catch (err) {
     next(err)
   }

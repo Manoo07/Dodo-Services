@@ -232,10 +232,12 @@ export async function sendDailyDigests(): Promise<void> {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const endOf7Days   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7, 23, 59, 59, 999)
 
-  // Get all verified users
+  const currentUTCHour = new Date().getUTCHours()
+
+  // Only send to verified users whose preferred digest hour matches right now
   const users = await prisma.user.findMany({
-    where: { emailVerified: true },
-    select: { id: true, email: true, name: true },
+    where: { emailVerified: true, digestHour: currentUTCHour },
+    select: { id: true, email: true, name: true, digestHour: true },
   })
 
   console.log(`[digest] Sending to ${users.length} user(s)…`)

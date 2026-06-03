@@ -73,14 +73,14 @@ const server = app.listen(PORT, () => {
   console.log(`Dodo API running on http://localhost:${PORT}`)
 })
 
-// ── Daily digest — every evening at 6 PM server time ─────────────────────────
-// Cron: second minute hour day month weekday
-cron.schedule('0 18 * * *', () => {
-  console.log('[digest] Running evening digest…')
+// ── Daily digest — runs every hour, sends to users whose digestHour matches ───
+cron.schedule('0 * * * *', () => {
+  const h = new Date().getUTCHours()
+  console.log(`[digest] Hourly check at UTC ${h}:00…`)
   void sendDailyDigests()
 }, { timezone: 'UTC' })
 
-console.log('[digest] Daily digest scheduled at 18:00 UTC')
+console.log('[digest] Hourly digest check scheduled (per-user preferred time)')
 
 async function shutdown(signal: string) {
   console.log(`${signal} received — shutting down`)
