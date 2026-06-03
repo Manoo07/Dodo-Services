@@ -66,25 +66,83 @@ tasksRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
   }
 })
 
-// ─── GET /api/tasks/all — flat list for client-side hydration ────────────────
+// ─── GET /api/tasks/all — paginated flat list with 3-level depth cap ─────────
+//
+// Query params:
+//   page  (default 0) — which page of ROOT tasks to return
+//   limit (default 20, max 50) — root tasks per page
+//
+// Strategy: fetch paginated ROOT tasks, then batch-fetch up to 3 levels of
+// children.  All levels are combined into a single flat array so the client
+// can build trees with the existing client-side logic.
 
 tasksRouter.get('/all', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const tasks = await prisma.task.findMany({
-      where: {
-        list: { userId: uid(req) },        // ← ownership
-        status: { not: 'deleted' },
-      },
-      include: {
-        tags: { include: { tag: true } },
-        reminders: true,
-        list: { select: { id: true, name: true, icon: true, color: true } },
-        section: { select: { id: true, name: true } },
-      },
+    const page  = Math.max(0, parseInt(String(req.query.page  ?? 0),  10) || 0)
+    const limit = Math.min(50, parseInt(String(req.query.limit ?? 20), 10) || 20)
+    const skip  = page * limit
+
+    const userWhere = { list: { userId: uid(req) } }
+    const notDeleted = { status: { not: 'deleted' as const } }
+
+    const TASK_INCLUDE = {
+      tags:    { include: { tag: true } },
+      reminders: true,
+      list:    { select: { id: true, name: true, icon: true, color: true } },
+      section: { select: { id: true, name: true } },
+    } satisfies Prisma.TaskInclude
+
+    // ── Level 0: paginated root tasks ──────────────────────────────────────────
+    const [total, rootTasks] = await Promise.all([
+      prisma.task.count({ where: { ...userWhere, ...notDeleted, parentId: null } }),
+      prisma.task.findMany({
+        where: { ...userWhere, ...notDeleted, parentId: null },
+        include: TASK_INCLUDE,
+        orderBy: [{ isPinned: 'desc' }, { order: 'asc' }, { createdAt: 'asc' }],
+        skip,
+        take: limit,
+      }),
+    ])
+
+    if (rootTasks.length === 0) {
+      res.json({ tasks: [], total, page, hasMore: false })
+      return
+    }
+
+    // ── Level 1: direct children of roots ──────────────────────────────────────
+    const rootIds  = rootTasks.map((t) => t.id)
+    const level1   = await prisma.task.findMany({
+      where: { ...notDeleted, parentId: { in: rootIds } },
+      include: TASK_INCLUDE,
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     })
 
-    res.json(tasks)
+    // ── Level 2: grandchildren ─────────────────────────────────────────────────
+    const l1Ids    = level1.map((t) => t.id)
+    const level2   = l1Ids.length
+      ? await prisma.task.findMany({
+          where: { ...notDeleted, parentId: { in: l1Ids } },
+          include: TASK_INCLUDE,
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        })
+      : []
+
+    // ── Level 3: great-grandchildren ───────────────────────────────────────────
+    const l2Ids    = level2.map((t) => t.id)
+    const level3   = l2Ids.length
+      ? await prisma.task.findMany({
+          where: { ...notDeleted, parentId: { in: l2Ids } },
+          include: TASK_INCLUDE,
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        })
+      : []
+
+    res.json({
+      tasks:   [...rootTasks, ...level1, ...level2, ...level3],
+      total,
+      page,
+      hasMore: skip + limit < total,
+    })
   } catch (err) {
     next(err)
   }
