@@ -232,8 +232,8 @@ export async function sendDailyDigests(): Promise<void> {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const endOf7Days   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7, 23, 59, 59, 999)
 
-  const now = new Date()
-  const currentUtcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+  const checkTime = new Date()
+  const currentUtcMinutes = checkTime.getUTCHours() * 60 + checkTime.getUTCMinutes()
 
   // Fetch all verified users and filter by their local hour
   // digestHour = local hour (0-23), digestTimezoneOffset = raw getTimezoneOffset() minutes
