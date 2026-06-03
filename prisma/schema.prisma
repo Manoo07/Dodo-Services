@@ -18,7 +18,8 @@ model User {
   otpExpiry     DateTime?
   resetToken    String?   @unique
   resetTokenExp DateTime?
-  digestHour    Int       @default(18)  // UTC hour (0-23) for daily email digest
+  digestHour            Int @default(18)  // local hour (0-23) chosen by user
+  digestTimezoneOffset  Int @default(0)   // raw getTimezoneOffset() in minutes
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   folders       Folder[]

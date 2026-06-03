@@ -22,7 +22,7 @@ function signToken(userId: string): string {
   return jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: JWT_EXPIRES })
 }
 
-function safeUser(user: { id: string; email: string; name: string; emailVerified: boolean; createdAt: Date; digestHour: number }) {
+function safeUser(user: { id: string; email: string; name: string; emailVerified: boolean; createdAt: Date; digestHour: number; digestTimezoneOffset: number }) {
   return {
     id: user.id,
     email: user.email,
@@ -30,6 +30,7 @@ function safeUser(user: { id: string; email: string; name: string; emailVerified
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
     digestHour: user.digestHour,
+    digestTimezoneOffset: user.digestTimezoneOffset,
   }
 }
 
@@ -188,10 +189,20 @@ authRouter.patch('/preferences', requireAuth, async (req: Request, res: Response
       }
     }
 
+    const { digestTimezoneOffset } = req.body
+    if (digestTimezoneOffset !== undefined) {
+      const off = Number(digestTimezoneOffset)
+      if (!Number.isInteger(off) || off < -840 || off > 840) {
+        res.status(400).json({ error: 'digestTimezoneOffset must be minutes between -840 and 840' })
+        return
+      }
+    }
+
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
         ...(digestHour !== undefined && { digestHour: Number(digestHour) }),
+        ...(digestTimezoneOffset !== undefined && { digestTimezoneOffset: Number(digestTimezoneOffset) }),
       },
     })
 

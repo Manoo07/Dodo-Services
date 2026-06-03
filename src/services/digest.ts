@@ -232,12 +232,22 @@ export async function sendDailyDigests(): Promise<void> {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const endOf7Days   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7, 23, 59, 59, 999)
 
-  const currentUTCHour = new Date().getUTCHours()
+  const now = new Date()
+  const currentUtcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
 
-  // Only send to verified users whose preferred digest hour matches right now
-  const users = await prisma.user.findMany({
-    where: { emailVerified: true, digestHour: currentUTCHour },
-    select: { id: true, email: true, name: true, digestHour: true },
+  // Fetch all verified users and filter by their local hour
+  // digestHour = local hour (0-23), digestTimezoneOffset = raw getTimezoneOffset() minutes
+  const allUsers = await prisma.user.findMany({
+    where: { emailVerified: true },
+    select: { id: true, email: true, name: true, digestHour: true, digestTimezoneOffset: true },
+  })
+
+  // Compute each user's local hour and keep only those whose local hour matches digestHour
+  // getTimezoneOffset() = UTC - local, so local = UTC - offset
+  const users = allUsers.filter((u) => {
+    const userLocalMinutes = ((currentUtcMinutes - u.digestTimezoneOffset + 1440 * 2) % 1440)
+    const userLocalHour = Math.floor(userLocalMinutes / 60)
+    return userLocalHour === u.digestHour
   })
 
   console.log(`[digest] Sending to ${users.length} user(s)…`)
