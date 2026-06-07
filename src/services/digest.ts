@@ -50,6 +50,17 @@ const PRIORITY_LABEL: Record<string, string> = {
   none: '',
 }
 
+// ─── Lucide key → emoji (for email rendering) ────────────────────────────────
+
+const LUCIDE_TO_EMOJI: Record<string, string> = {
+  Briefcase: '💼', BookOpen: '📖', Star: '⭐', Home: '🏠', Heart: '❤️',
+  Rocket: '🚀', Target: '🎯', Music: '🎵', Coffee: '☕', Globe: '🌍',
+  Code: '💻', Zap: '⚡', Flag: '🚩', Bell: '🔔', Inbox: '📥',
+  Archive: '📦', Folder: '📁', Tag: '🏷️', Users: '👥', ShoppingCart: '🛒',
+  Calendar: '📅', Clipboard: '📋', Clock: '⏰', Layers: '🗂️', Lightbulb: '💡',
+  Microscope: '🔬', Plane: '✈️', Shield: '🛡️', Wrench: '🔧', Dumbbell: '🏋️',
+}
+
 // ─── Task type ────────────────────────────────────────────────────────────────
 
 interface DigestTask {
@@ -71,7 +82,8 @@ function buildDigestEmail(name: string, totalCount: number, sections: { label: s
       const priorityColor = PRIORITY_COLOR[task.priority] ?? '#9ca3af'
       const priorityLabel = PRIORITY_LABEL[task.priority]
       const listName      = task.list?.name ?? ''
-      const listIcon      = task.list?.icon ?? '📋'
+      const rawIcon       = task.list?.icon ?? '📋'
+      const listIcon      = LUCIDE_TO_EMOJI[rawIcon] ?? rawIcon
 
       return `
         <tr>
